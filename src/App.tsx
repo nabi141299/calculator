@@ -24,6 +24,8 @@ export default function App() {
   const [equation, setEquation] = useState('');
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [isScientific, setIsScientific] = useState(false);
+  const [isDeg, setIsDeg] = useState(true);
   const [isResult, setIsResult] = useState(false);
 
   // Handle number input
@@ -52,10 +54,29 @@ export default function App() {
   // Handle calculation
   const calculate = useCallback(() => {
     try {
-      const fullEquation = equation + display;
-      // Using Function constructor as a safer alternative to eval for basic math
-      // In a production app, a proper math parser library would be better
-      const result = new Function(`return ${fullEquation.replace(/×/g, '*').replace(/÷/g, '/')}`)();
+      let fullEquation = equation + display;
+      
+      // Pre-processing for scientific functions
+      const processedEquation = fullEquation
+        .replace(/×/g, '*')
+        .replace(/÷/g, '/')
+        .replace(/sin\(/g, 'sin(')
+        .replace(/cos\(/g, 'cos(')
+        .replace(/tan\(/g, 'tan(')
+        .replace(/log\(/g, 'Math.log10(')
+        .replace(/ln\(/g, 'Math.log(')
+        .replace(/√\(/g, 'Math.sqrt(')
+        .replace(/π/g, 'Math.PI')
+        .replace(/e/g, 'Math.E')
+        .replace(/\^/g, '**');
+
+      // Helper functions for Trig
+      const toRad = (val: number) => isDeg ? (val * Math.PI) / 180 : val;
+      const sin = (val: number) => Math.sin(toRad(val));
+      const cos = (val: number) => Math.cos(toRad(val));
+      const tan = (val: number) => Math.tan(toRad(val));
+
+      const result = new Function('sin', 'cos', 'tan', `return ${processedEquation}`)(sin, cos, tan);
       const resultStr = Number.isInteger(result) ? result.toString() : result.toFixed(8).replace(/\.?0+$/, '');
       
       const newHistoryItem: HistoryItem = {
@@ -88,6 +109,26 @@ export default function App() {
       clear();
     } else {
       setDisplay(prev => (prev.length > 1 ? prev.slice(0, -1) : '0'));
+    }
+  };
+
+  // Handle scientific functions
+  const handleScientific = (func: string) => {
+    if (isResult) {
+      setDisplay(func + '(');
+      setIsResult(false);
+    } else {
+      setDisplay(prev => (prev === '0' ? func + '(' : prev + func + '('));
+    }
+  };
+
+  // Handle constants
+  const handleConstant = (constVal: string) => {
+    if (isResult) {
+      setDisplay(constVal);
+      setIsResult(false);
+    } else {
+      setDisplay(prev => (prev === '0' ? constVal : prev + constVal));
     }
   };
 
@@ -144,7 +185,27 @@ export default function App() {
       >
         {/* Header */}
         <div className="px-8 pt-8 pb-4 flex justify-between items-center">
-          <h1 className="text-zinc-400 font-medium text-sm tracking-widest uppercase">Precision</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-zinc-400 font-medium text-sm tracking-widest uppercase">Precision</h1>
+            <div className="flex bg-zinc-100 p-1 rounded-lg">
+              <button 
+                onClick={() => setIsScientific(!isScientific)}
+                className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-tighter transition-all ${
+                  isScientific ? 'bg-white text-zinc-900 shadow-sm' : 'text-zinc-400 hover:text-zinc-600'
+                }`}
+              >
+                Sci
+              </button>
+              {isScientific && (
+                <button 
+                  onClick={() => setIsDeg(!isDeg)}
+                  className="ml-1 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-tighter bg-zinc-900 text-white shadow-sm transition-all"
+                >
+                  {isDeg ? 'Deg' : 'Rad'}
+                </button>
+              )}
+            </div>
+          </div>
           <button 
             onClick={() => setShowHistory(!showHistory)}
             className="p-2 hover:bg-zinc-100 rounded-full transition-colors text-zinc-500"
@@ -176,30 +237,58 @@ export default function App() {
         </div>
 
         {/* Keypad */}
-        <div className="p-6 grid grid-cols-4 gap-3 bg-zinc-50/50">
-          <Button onClick={clear} variant="action"><RotateCcw size={20} /></Button>
-          <Button onClick={backspace} variant="action"><Delete size={20} /></Button>
-          <Button onClick={() => handleOperator('%')} variant="action">%</Button>
-          <Button onClick={() => handleOperator('/')} variant="operator"><Divide size={20} /></Button>
+        <div className="p-6 flex flex-col gap-3 bg-zinc-50/50">
+          <AnimatePresence>
+            {isScientific && (
+              <motion.div 
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="grid grid-cols-4 gap-2 overflow-hidden mb-1"
+              >
+                <Button onClick={() => handleScientific('sin')} variant="action" className="h-10 text-sm">sin</Button>
+                <Button onClick={() => handleScientific('cos')} variant="action" className="h-10 text-sm">cos</Button>
+                <Button onClick={() => handleScientific('tan')} variant="action" className="h-10 text-sm">tan</Button>
+                <Button onClick={() => handleScientific('√')} variant="action" className="h-10 text-sm">√</Button>
+                
+                <Button onClick={() => handleScientific('log')} variant="action" className="h-10 text-sm">log</Button>
+                <Button onClick={() => handleScientific('ln')} variant="action" className="h-10 text-sm">ln</Button>
+                <Button onClick={() => handleConstant('π')} variant="action" className="h-10 text-sm">π</Button>
+                <Button onClick={() => handleConstant('e')} variant="action" className="h-10 text-sm">e</Button>
 
-          <Button onClick={() => handleNumber('7')}>7</Button>
-          <Button onClick={() => handleNumber('8')}>8</Button>
-          <Button onClick={() => handleNumber('9')}>9</Button>
-          <Button onClick={() => handleOperator('*')} variant="operator"><X size={20} /></Button>
+                <Button onClick={() => handleNumber('(')} variant="action" className="h-10 text-sm">(</Button>
+                <Button onClick={() => handleNumber(')')} variant="action" className="h-10 text-sm">)</Button>
+                <Button onClick={() => handleOperator('^')} variant="action" className="h-10 text-sm">^</Button>
+                <div className="h-10"></div> {/* Spacer */}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
-          <Button onClick={() => handleNumber('4')}>4</Button>
-          <Button onClick={() => handleNumber('5')}>5</Button>
-          <Button onClick={() => handleNumber('6')}>6</Button>
-          <Button onClick={() => handleOperator('-')} variant="operator"><Minus size={20} /></Button>
+          <div className="grid grid-cols-4 gap-3">
+            <Button onClick={clear} variant="action"><RotateCcw size={20} /></Button>
+            <Button onClick={backspace} variant="action"><Delete size={20} /></Button>
+            <Button onClick={() => handleOperator('%')} variant="action">%</Button>
+            <Button onClick={() => handleOperator('/')} variant="operator"><Divide size={20} /></Button>
 
-          <Button onClick={() => handleNumber('1')}>1</Button>
-          <Button onClick={() => handleNumber('2')}>2</Button>
-          <Button onClick={() => handleNumber('3')}>3</Button>
-          <Button onClick={() => handleOperator('+')} variant="operator"><Plus size={20} /></Button>
+            <Button onClick={() => handleNumber('7')}>7</Button>
+            <Button onClick={() => handleNumber('8')}>8</Button>
+            <Button onClick={() => handleNumber('9')}>9</Button>
+            <Button onClick={() => handleOperator('*')} variant="operator"><X size={20} /></Button>
 
-          <Button onClick={() => handleNumber('0')} className="col-span-1">0</Button>
-          <Button onClick={() => handleNumber('.')}>.</Button>
-          <Button onClick={calculate} variant="equal" className="col-span-2"><Equal size={24} /></Button>
+            <Button onClick={() => handleNumber('4')}>4</Button>
+            <Button onClick={() => handleNumber('5')}>5</Button>
+            <Button onClick={() => handleNumber('6')}>6</Button>
+            <Button onClick={() => handleOperator('-')} variant="operator"><Minus size={20} /></Button>
+
+            <Button onClick={() => handleNumber('1')}>1</Button>
+            <Button onClick={() => handleNumber('2')}>2</Button>
+            <Button onClick={() => handleNumber('3')}>3</Button>
+            <Button onClick={() => handleOperator('+')} variant="operator"><Plus size={20} /></Button>
+
+            <Button onClick={() => handleNumber('0')} className="col-span-1">0</Button>
+            <Button onClick={() => handleNumber('.')}>.</Button>
+            <Button onClick={calculate} variant="equal" className="col-span-2"><Equal size={24} /></Button>
+          </div>
         </div>
 
         {/* History Sidebar/Overlay */}
